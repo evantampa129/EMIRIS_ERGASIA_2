@@ -1,0 +1,21 @@
+build/
+*.o
+hpatches-sequences-release/
+/hpatches/
+mirflickr/
+split.txt
+search
+
+# compressed dataset archives
+*.zip
+*.tar
+*.tar.gz
+
+# cached vocabulary and vectors of the program
+cache/
+
+# experiment outputs, kept locally, the report uses them
+results/
+
+# old empty folder, not part of the project
+/include/image_search/
