@@ -1,100 +1,131 @@
 #include "config.hpp"
-#include <stdexcept>
+#include <cmath>
 #include <fstream>
+#include <limits>
+#include <map>
+#include <stdexcept>
+#include <set>
 
-// fill config struct with user inputs
+static int integer(const std::string& value) {
+    std::size_t end = 0;
+    int parsed = std::stoi(value, &end);
+    if (end != value.size()) {
+        throw std::invalid_argument("Error: invalid integer: " + value);
+    }
+    return parsed;
+}
+
+static double real(const std::string& value) {
+    std::size_t end = 0;
+    double parsed = std::stod(value, &end);
+    if (end != value.size() || !std::isfinite(parsed)) {
+        throw std::invalid_argument("Error: invalid number: " + value);
+    }
+    return parsed;
+}
+
 Config parseArguments(int argc, char** argv) {
-    Config config; // empty to be filled config object
-    
-    // parse command line args
+    Config c;
+    std::map<std::string, std::string*> strings{{"-hp", &c.hp_path},
+                                                {"-mir", &c.mir_path},
+                                                {"-split", &c.split_file},
+                                                {"-set", &c.query_set},
+                                                {"-o", &c.output_file}};
+    std::map<std::string, int*> ints{{"-vocab", &c.vocab},
+                                     {"-S", &c.S},
+                                     {"-D", &c.D},
+                                     {"-seed", &c.seed},
+                                     {"-k", &c.lsh_k},
+                                     {"-L", &c.lsh_L},
+                                     {"-kproj", &c.hc_kproj},
+                                     {"-probes", &c.hc_probes},
+                                     {"-nbits", &c.ivfpq_nbits},
+                                     {"-C", &c.candidates},
+                                     {"-T", &c.ransac_trials}};
+    std::map<std::string, double*> reals{{"-rho", &c.rho}, {"-tau", &c.tau}, {"-p", &c.confidence}};
+    std::set<std::string> seen;
     for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i]; // convert arg to cpp string for comparison
-        
-        // if arg is path name or file name,  save it statically
-        // if arg is a number, convert to int using stoi and save it  
-        if (arg == "-hp" && i + 1 < argc) {
-            config.hp_path = argv[++i];
+        std::string arg = argv[i];
+        if (!seen.insert(arg).second) {
+            throw std::invalid_argument("Error: repeated option: " + arg);
         }
-        else if (arg == "-mir" && i + 1 < argc) {
-            config.mir_path = argv[++i];
+        if (arg == "-exact" || arg == "-lsh" || arg == "-hypercube" || arg == "-ivfflat" || arg == "-ivfpq") {
+            if (!c.method.empty()) {
+                throw std::invalid_argument("Error: choose exactly one search method");
+            }
+            c.method = arg;
+            continue;
         }
-        else if (arg == "-split" && i + 1 < argc) {
-            config.split_file = argv[++i];
+        if (!strings.count(arg) && !ints.count(arg) && !reals.count(arg) && arg != "-w" && arg != "-M" &&
+            arg != "-nprobe" && arg != "-kclusters" && arg != "-adaptive") {
+            throw std::invalid_argument("Error: unknown option: " + arg);
         }
-        else if (arg == "-vocab" && i + 1 < argc) {
-            config.vocab = std::stoi(argv[++i]); 
+        if (++i >= argc) {
+            throw std::invalid_argument("Error: missing value for " + arg);
         }
-        else if (arg == "-S" && i + 1 < argc) {
-            config.S = std::stoi(argv[++i]);
+        std::string value = argv[i];
+        if (strings.count(arg)) {
+            *strings[arg] = value;
         }
-        else if (arg == "-D" && i + 1 < argc) {
-            config.D = std::stoi(argv[++i]);
+        else if (ints.count(arg)) {
+            *ints[arg] = integer(value);
         }
-        else if (arg == "-set" && i + 1 < argc) {
-            config.query_set = argv[++i];
+        else if (reals.count(arg)) {
+            *reals[arg] = real(value);
         }
-        else if (arg == "-o" && i + 1 < argc) {
-            config.output_file = argv[++i];
+        else if (arg == "-w") {
+            c.lsh_w = c.hc_w = real(value);
         }
-        else if (arg == "-seed" && i + 1 < argc) {
-            config.seed = std::stoi(argv[++i]);
+        else if (arg == "-M") {
+            c.hc_M = c.ivfpq_M = integer(value);
         }
-
-        // save search method
-        else if (arg == "-exact" || arg == "-lsh" || arg == "-hypercube" || arg == "-ivfflat" || arg == "-ivfpq") {
-            config.method = arg;
+        else if (arg == "-nprobe") {
+            c.ivfflat_nprobe = c.ivfpq_nprobe = integer(value);
         }
-
-        // search method parameters
-        else if (arg == "-k" && i + 1 < argc) {
-            config.lsh_k = std::stoi(argv[++i]);
+        else if (arg == "-kclusters") {
+            c.ivfflat_kclusters = c.ivfpq_kclusters = integer(value);
+            c.kclusters_given = true;
         }
-        else if (arg == "-L" && i + 1 < argc) {
-            config.lsh_L = std::stoi(argv[++i]);
-        }
-        else if (arg == "-kproj" && i + 1 < argc) {
-            config.hc_kproj = std::stoi(argv[++i]);
-        }
-        else if (arg == "-probes" && i + 1 < argc) {
-            config.hc_probes = std::stoi(argv[++i]);
-        }
-        else if (arg == "-nbits" && i + 1 < argc) {
-            config.ivfpq_nbits = std::stoi(argv[++i]);
-        }
-        // because some parameters are shared, we set both of them to the same value for simplicitys sake
-        // even though only one of them is used depending on the search method
-        else if (arg == "-w" && i + 1 < argc) {
-            double val = std::stod(argv[++i]); // stod converts string to double
-            config.lsh_w = val;
-            config.hc_w = val;
-        }
-        else if (arg == "-M" && i + 1 < argc) {
-            int val = std::stoi(argv[++i]);
-            config.hc_M = val;
-            config.ivfpq_M = val;
-        }
-        else if (arg == "-kclusters" && i + 1 < argc) {
-            int val = std::stoi(argv[++i]);
-            config.ivfflat_kclusters = val;
-            config.ivfpq_kclusters = val;
-        }
-        else if (arg == "-nprobe" && i + 1 < argc) {
-            int val = std::stoi(argv[++i]);
-            config.ivfflat_nprobe = val;
-            config.ivfpq_nprobe = val;
+        else if (arg == "-adaptive") {
+            int flag = integer(value);
+            if (flag != 0 && flag != 1) {
+                throw std::invalid_argument("Error: adaptive must be 0 or 1");
+            }
+            c.adaptive = flag == 1;
         }
     }
-    
-    return config;
+    return c;
+}
+
+void validateVerificationConfig(const Config& c) {
+    if (c.hp_path.empty() || c.split_file.empty() || c.output_file.empty() || c.method.empty()) {
+        throw std::invalid_argument("Error: -hp, -split, -o and one search method are required");
+    }
+    if (c.vocab <= 0 || c.S <= 0 || c.D < 0 || c.D > 25000 || c.seed < 0) {
+        throw std::invalid_argument("Error: vocab/S must be positive, 0<=D<=25000 and seed>=0");
+    }
+    if (c.D > 0 && c.mir_path.empty()) {
+        throw std::invalid_argument("Error: -mir is required for D>0");
+    }
+    if (c.query_set != "validation" && c.query_set != "test") {
+        throw std::invalid_argument("Error: set must be validation or test");
+    }
+    if (c.candidates < 10 || c.ransac_trials <= 0 || !std::isfinite(c.rho) || c.rho <= 0 || c.rho >= 1 ||
+        !std::isfinite(c.tau) || c.tau <= 0 || !std::isfinite(c.confidence) || c.confidence <= 0 || c.confidence >= 1) {
+        throw std::invalid_argument("Error: C>=10, T>0, tau>0, 0<rho<1 and 0<p<1 are required");
+    }
+    if ((c.method == "-ivfflat" || c.method == "-ivfpq") && (!c.kclusters_given || c.ivfflat_kclusters <= 0)) {
+        throw std::invalid_argument("Error: IVF methods require an explicit positive -kclusters");
+    }
 }
 
 // reads split.txt and categorizes each sequence folder into train, validation, or test
 DatasetSplit readSplitFile(const std::string& filename) {
     DatasetSplit split;
-    
+
     // open the file for reading
     std::ifstream file(filename);
-    
+
     // check if open was successful
     if (!file.is_open()) {
         throw std::runtime_error("Error: Could not open split file");
